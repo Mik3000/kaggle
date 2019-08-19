@@ -2,7 +2,7 @@
 rm(list=ls())
 gc(reset=TRUE)
 cat('\014')
-setwd("~/Documents/kaggle")
+setwd("~/kaggle")
 
 library(data.table)
 library(dplyr)
