@@ -18,7 +18,7 @@ rm(train_transaction, train_identity)
 
 # train on subset
 set.seed(1234)
-train = sample_n(train, 50000)
+train = sample_n(train, 5000)
 
 # drop columns with empty cells ("")
 empty_cells = ifelse(train == '', 1, 0) %>% colSums()
@@ -37,8 +37,10 @@ x = train %>% select(-isFraud)
 y = train %>% select(isFraud) %>% unlist()
 
 param <-  data.frame(nrounds=c(100), max_depth = c(2),eta =c(0.3),gamma=c(0),
-                     colsample_bytree=c(0.8),min_child_weight=c(1),subsample=c(1)) 
+                     colsample_bytree=c(0.8),min_child_weight=c(1),subsample=c(1))
+
 xgb_fit <- train(isFraud ~ ., train, method = "xgbTree", metric = "Accuracy", trControl = trainControl(method="none"), tuneGrid = param)
+
 pred_xgb <- predict(xgb_fit, newdata = x)
 
 confusionMatrix(pred_xgb, y)
