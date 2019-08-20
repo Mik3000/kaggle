@@ -38,8 +38,6 @@ y = train %>% select(isFraud) %>% unlist()
 
 param <-  data.frame(nrounds=c(100), max_depth = c(2),eta =c(0.3),gamma=c(0),
                      colsample_bytree=c(0.8),min_child_weight=c(1),subsample=c(1)) 
-mtry <- sqrt(ncol(x)) %>% round()
-tunegrid <- expand.grid(.mtry = mtry)
 xgb_fit <- train(isFraud ~ ., train, method = "xgbTree", metric = "Accuracy", trControl = trainControl(method="none"), tuneGrid = param)
 pred_xgb <- predict(xgb_fit, newdata = x)
 
