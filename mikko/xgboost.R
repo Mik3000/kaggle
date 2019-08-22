@@ -10,6 +10,7 @@ library(caret)
 library(e1071)
 library(randomForest)
 library(ROCR)
+library(purrr)
 
 train_transaction = fread("data/train_transaction.csv", na.strings=c("","NA"), stringsAsFactors = TRUE)
 train_identity = fread("data/train_identity.csv", na.strings=c("","NA"), stringsAsFactors = TRUE)
@@ -29,15 +30,18 @@ train$isFraud = train$isFraud %>% as.factor()
 
 train %>% group_by(isFraud) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
 
-x = train %>% select(-isFraud)
+x = train %>% select(-isFraud) #%>% as.matrix()
+y = train %>% select(isFraud) %>% unlist %>% as.factor()
 
-param <-  data.frame(nrounds=c(100), max_depth = c(2),eta =c(0.3),gamma=c(0),
-                     colsample_bytree=c(0.8),min_child_weight=c(1),subsample=c(1))
+x = map_if(x, is.character, as.factor) %>% as.data.frame()
 
-xgb_fit <- train(isFraud ~ ., train, method = "xgbTree", metric = "Accuracy", 
+param <-  data.frame(nrounds = c(10), max_depth = c(6),eta = c(0.1),gamma = c(0),
+                     colsample_bytree = c(0.8), min_child_weight = c(1), subsample = c(1))
+
+xgb_fit <- train(x, y, method = "xgbTree", metric = "Accuracy", 
                  trControl = trainControl(method = "none"), tuneGrid = param, na.action = na.pass)
 
-pred_xgb <- predict(xgb_fit, newdata = x)
+pred_xgb <- predict(xgb_fit, newdata = x2)
 
 confusionMatrix(pred_xgb, y)
 pred = prediction(as.numeric(pred_xgb), as.numeric(y))
