@@ -11,6 +11,7 @@ library(e1071)
 library(randomForest)
 library(ROCR)
 library(purrr)
+library(xgboost)
 
 train_transaction = fread("data/train_transaction.csv", na.strings=c("","NA"), stringsAsFactors = TRUE)
 train_identity = fread("data/train_identity.csv", na.strings=c("","NA"), stringsAsFactors = TRUE)
@@ -21,19 +22,27 @@ rm(train_transaction, train_identity)
 set.seed(1234)
 train = sample_n(train, 5000)
 
+train = map_if(train, is.character, as.factor) %>% as.data.frame()
+
+train$isFraud = train$isFraud %>% as.factor()
+
+train_complete = complete.cases(train)
+
+sparse.model.matrix()
+
+options(na.action='na.pass')
+train_dummy = sparse.model.matrix(isFraud ~ . -1, train)
+
 # drop columns with NA cells
 #missing_obs = apply(train, 2, function(col) sum(is.na(col)) / length(col))
 #train = train[, missing_obs < 0.01]
 
-#train = sample_n(train, 10000)
-train$isFraud = train$isFraud %>% as.factor()
-
 train %>% group_by(isFraud) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
 
-x = train %>% select(-isFraud) #%>% as.matrix()
-y = train %>% select(isFraud) %>% unlist %>% as.factor()
+x = train_dummy %>% select(-isFraud) #%>% as.matrix()
+y = train_dummy %>% select(isFraud) %>% unlist %>% as.factor()
 
-x = map_if(x, is.character, as.factor) %>% as.data.frame()
+
 
 param <-  data.frame(nrounds = c(10), max_depth = c(6),eta = c(0.1),gamma = c(0),
                      colsample_bytree = c(0.8), min_child_weight = c(1), subsample = c(1))
