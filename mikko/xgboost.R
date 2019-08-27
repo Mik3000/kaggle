@@ -7,8 +7,6 @@ setwd("~/kaggle")
 library(data.table)
 library(dplyr)
 library(caret)
-library(e1071)
-library(randomForest)
 library(ROCR)
 library(purrr)
 library(xgboost)
@@ -21,7 +19,7 @@ rm(train_transaction, train_identity)
 
 # train on subset
 set.seed(1234)
-dataset = sample_n(dataset, 100000)
+dataset = sample_n(dataset, 10000)
 
 dataset = map_if(dataset, is.character, as.factor) %>% as.data.frame()
 
@@ -37,10 +35,10 @@ y_train = train %>% select(isFraud) %>% unlist %>% as.factor()
 train = upSample(x = x_train, y = y_train, yname = "isFraud")
 
 options(na.action='na.pass')
-#train_dummy = sparse.model.matrix(isFraud ~ . -1, train)
+train_dummy = sparse.model.matrix(isFraud ~ . -1, train)
 #saveRDS(train_dummy, "data/train_dummy.RDS")
-#test_dummy = sparse.model.matrix(isFraud ~ . -1, test)
-saveRDS(test_dummy, "data/test_dummy.RDS")
+test_dummy = sparse.model.matrix(isFraud ~ . -1, test)
+#saveRDS(test_dummy, "data/test_dummy.RDS")
 
 # drop columns with NA cells
 #missing_obs = apply(train, 2, function(col) sum(is.na(col)) / length(col))
@@ -51,25 +49,29 @@ test %>% group_by(isFraud) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
 y_train = train %>% select(isFraud) %>% unlist %>% as.numeric()-1
 y_test = test %>% select(isFraud) %>% unlist %>% as.factor()
 
-xgbGrid <- expand.grid(nrounds = c(100, 200),
-                       max_depth = c(10, 15, 20, 25),
-                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
-                       eta = 0.1,
-                       gamma = 0,
-                       min_child_weight = 1,
-                       subsample = 1
-)
-
-xgb_trcontrol = trainControl(
-  method = "cv",
-  number = 5,  
-  allowParallel = FALSE,
-  verboseIter = FALSE,
-  returnData = FALSE
-)
+eta = c(0.05, 0.1, 0.2, 0.4, 0.5, 0.7, 1)
+n_settings = length(eta)
+recall_out = rep(NA, n_settings)
+for (i in 1:n_settings){
+  xgb_fit = xgboost(data = train_dummy, label = y_train, max_depth = 2, 
+                    eta = eta[i], nthread = 2, nrounds = 10, objective = "binary:logistic")
+  pred_out <- predict(xgb_fit, test_dummy)
+  pred = ifelse(pred_out > 0.5, 1, 0)
+  pred = as.factor(pred)
+  conf = confusionMatrix(pred, y_test)
+  recall = conf$byClass['Specificity'] %>% unlist(use.names = FALSE)
+  recall_out[i] = recall
+}
+max_eta = eta[which.max(recall_out)]
 
 xgb_fit = xgboost(data = train_dummy, label = y_train, max_depth = 2, 
-                  eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic")
+                  eta = eta, nthread = 2, nrounds = 10, objective = "binary:logistic")
+
+pred_out <- predict(xgb_fit, train_dummy)
+pred = ifelse(pred_out > 0.5, 1, 0)
+pred = as.factor(pred)
+y_train_factor = as.factor(y_train)
+confusionMatrix(pred, y_train_factor)
 
 pred_out <- predict(xgb_fit, test_dummy)
 pred = ifelse(pred_out > 0.5, 1, 0)
