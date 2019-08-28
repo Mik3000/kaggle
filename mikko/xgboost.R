@@ -11,6 +11,7 @@ library(ROCR)
 library(purrr)
 library(xgboost)
 library(Matrix)
+library(tidyr)
 
 train_transaction = fread("data/train_transaction.csv", na.strings=c("","NA"), stringsAsFactors = TRUE)
 train_identity = fread("data/train_identity.csv", na.strings=c("","NA"), stringsAsFactors = TRUE)
@@ -51,11 +52,16 @@ y_test = test %>% select(isFraud) %>% unlist %>% as.factor()
 
 eta = c(0.05, 0.1, 0.2, 0.4, 0.5, 0.7, 1)
 n_settings = length(eta)
+n_rounds = 500
 recall_out = rep(NA, n_settings)
+conv_error = matrix(nrow = n_settings, ncol = n_rounds)
 for (i in 1:n_settings){
-  xgb_fit = xgboost(data = train_dummy, label = y_train, max_depth = 2, 
-                    eta = eta[i], nthread = 2, nrounds = 10, objective = "binary:logistic")
-  pred_out <- predict(xgb_fit, test_dummy)
+  params = list(eta = eta[i], colsample_bylevel= 2/3,
+              subsample = 0.5, max_depth = 2,
+              min_child_weigth = 1)
+  xgb_fit = xgboost(train_dummy, label = y_train, nrounds = 500, params = params, objective = "binary:logistic")
+  conv_error[i,] = xgb_fit$evaluation_log$train_error
+  pred_out = predict(xgb_fit, test_dummy)
   pred = ifelse(pred_out > 0.5, 1, 0)
   pred = as.factor(pred)
   conf = confusionMatrix(pred, y_test)
@@ -64,8 +70,15 @@ for (i in 1:n_settings){
 }
 max_eta = eta[which.max(recall_out)]
 
+colnames(conv_error) = 1:500
+conv_error = cbind(conv_error, eta) %>% as.data.frame()
+conv_error = conv_error %>% gather(round, error, -eta)
+conv_error$eta = as.character(conv_error$eta)
+conv_error$round = as.numeric(conv_error$round)
+ggplot(conv_error) + geom_line(aes(x = round, y = error, color = eta))
+
 xgb_fit = xgboost(data = train_dummy, label = y_train, max_depth = 2, 
-                  eta = eta, nthread = 2, nrounds = 10, objective = "binary:logistic")
+                  eta = max_eta, nthread = 2, nrounds = 10, objective = "binary:logistic")
 
 pred_out <- predict(xgb_fit, train_dummy)
 pred = ifelse(pred_out > 0.5, 1, 0)
@@ -83,4 +96,4 @@ auc = performance(pred, measure = "auc")
 
 perf = performance(pred,"tpr","fpr")
 
-plot(perf, main = auc@y.values[[1]], colorize = TRUE)
+plot(perf, main = paste0("AUC: ", auc@y.values[[1]]), colorize = TRUE)
