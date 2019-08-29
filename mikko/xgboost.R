@@ -33,14 +33,13 @@ x_train = train %>% select(-isFraud)
 y_train = train %>% select(isFraud) %>% unlist %>% as.factor()
 
 # upsample
-n_pos = (length(y_train) * 0.3) %>% round()
-length(y_train[y_train == 1]) / 0.3
-n_resample = n_pos - length(y_train[y_train == 1])
+p_upsample = 0.3
+n_resample = ((length(y_train[y_train == 0])/ (1-p_upsample)) * p_upsample) %>% round()
 resampled = sample_n(x_train[y_train  == 1,], n_resample, replace = TRUE)
 resampled$isFraud = 1
 train = data.frame(x_train, isFraud = y_train) %>% rbind(resampled)
 
-options(na.action='na.pass')
+options(na.action = 'na.pass')
 train_dummy = sparse.model.matrix(isFraud ~ . -1, train)
 #saveRDS(train_dummy, "data/train_dummy.RDS")
 test_dummy = sparse.model.matrix(isFraud ~ . -1, test)
