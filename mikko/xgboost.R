@@ -33,33 +33,29 @@ x_train = train %>% select(-isFraud)
 y_train = train %>% select(isFraud) %>% unlist %>% as.factor()
 
 # upsample
-# p_upsample = 0.5
+# p_upsample = 0.3
 # n_resample = ((length(y_train[y_train == 0])/ (1 - p_upsample)) * p_upsample) %>% round()
 # resampled = sample_n(x_train[y_train  == 1,], n_resample, replace = TRUE)
 # resampled$isFraud = 1
 # train = data.frame(x_train, isFraud = y_train) %>% rbind(resampled)
-# 
+
 options(na.action = 'na.pass')
 train_dummy = sparse.model.matrix(isFraud ~ . -1, train)
 # #saveRDS(train_dummy, "data/train_dummy.RDS")
 test_dummy = sparse.model.matrix(isFraud ~ . -1, test)
 #saveRDS(test_dummy, "data/test_dummy.RDS")
 
-# drop columns with NA cells
-#missing_obs = apply(train, 2, function(col) sum(is.na(col)) / length(col))
-#train = train[, missing_obs < 0.01]
-
 train %>% group_by(isFraud) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
 
 y_train = train %>% select(isFraud) %>% unlist %>% as.numeric()#-1
 y_test = test %>% select(isFraud) %>% unlist %>% as.factor()
 
-
 ### TUNE ETA ###
 eta = c(0.05, 0.1, 0.2, 0.4, 0.5, 0.7, 1)
 n_settings = length(eta)
 n_rounds = 200
-auc_out = rep(NA, n_settings)
+n_round_best = rep(NA, n_settings)
+auc_best = rep(NA, n_settings)
 conv_error = matrix(nrow = n_settings, ncol = n_rounds)
 scale_pos_weight = sum(y_train == 0) / sum(y_train == 1)
 for (i in 1:n_settings){
@@ -67,122 +63,133 @@ for (i in 1:n_settings){
               subsample = 0.5, max_depth = 2,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
-                    objective = "binary:logistic", eval_metric = 'auc', nfold = 5)
-  conv_error[i,] = xgb_fit$evaluation_log$test_auc_mean
-  auc_out[i] = xgb_fit$evaluation_log$test_auc_mean[n_rounds]
+                    objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
+                   early_stopping_rounds = 10)
+  n_round_best[i] = xgb_fit$best_iteration
+  auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
 
-max_eta = eta[which.max(auc_out)]
+best_n_rounds = n_round_best[which.max(auc_best)]
+max_eta = eta[which.max(auc_best)]
 
-colnames(conv_error) = 1:n_rounds
-conv_error = cbind(conv_error, eta) %>% as.data.frame()
-conv_error = conv_error %>% gather(round, error, -eta)
-conv_error$eta = as.character(conv_error$eta)
-conv_error$round = as.numeric(conv_error$round)
-ggplot(conv_error) + geom_line(aes(x = round, y = error, color = eta))
-
-params = list(eta = max_eta = eta[which.max(auc_out)], colsample_bylevel = 2/3,
+params = list(eta = 0.1, colsample_bylevel = 2/3,
               subsample = 0.5, max_depth = 2,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
-# xgb_fit = xgboost(train_dummy, label = y_train, nrounds = 200, params = params, 
-#                   objective = "binary:logistic", eval_metric = 'auc')
+xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
+                   objective = "binary:logistic", eval_metric = 'auc')
 
 ### colsample ###
 colsample = c(1/3, 2/3, 1)
 n_settings = length(colsample)
 n_rounds = 200
-auc_out = rep(NA, n_settings)
+n_round_best = rep(NA, n_settings)
+auc_best = rep(NA, n_settings)
 conv_error = matrix(nrow = n_settings, ncol = n_rounds)
 for (i in 1:n_settings){
   params = list(eta = max_eta, colsample_bylevel= colsample[i],
                 subsample = 0.5, max_depth = 2,
                 min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
-                   objective = "binary:logistic", eval_metric = 'auc', nfold = 5)
-  conv_error[i,] = xgb_fit$evaluation_log$test_auc_mean
-  auc_out[i] = xgb_fit$evaluation_log$test_auc_mean[n_rounds]
+                   objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
+                   early_stopping_rounds = 10)
+  n_round_best[i] = xgb_fit$best_iteration
+  auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
 
-max_colsample = colsample[which.max(auc_out)]
-
-colnames(conv_error) = 1:n_rounds
-conv_error = cbind(conv_error, colsample) %>% as.data.frame()
-conv_error = conv_error %>% gather(round, error, -colsample)
-conv_error$colsample = as.character(conv_error$colsample)
-conv_error$round = as.numeric(conv_error$round)
-ggplot(conv_error) + geom_line(aes(x = round, y = error, color = colsample))
+best_n_rounds = n_round_best[which.max(auc_best)]
+max_colsample = colsample[which.max(auc_best)]
 
 params = list(eta = max_eta, colsample_bylevel = max_colsample,
               subsample = 0.5, max_depth = 2,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
-# xgb_fit = xgboost(train_dummy, label = y_train, nrounds = 200, params = params, 
-#                   objective = "binary:logistic", eval_metric = 'auc')
+xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
+                  objective = "binary:logistic", eval_metric = 'auc')
 
 ### Max depth
 maxdepth = c(1, 2,4,6,10)
 n_settings = length(maxdepth)
 n_rounds = 200
-auc_out = rep(NA, n_settings)
+n_round_best = rep(NA, n_settings)
+auc_best = rep(NA, n_settings)
 conv_error = matrix(nrow = n_settings, ncol = n_rounds)
 for (i in 1:n_settings){
   params = list(eta = max_eta, colsample_bylevel= max_colsample,
                 subsample = 0.5, max_depth = maxdepth[i],
                 min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
-                   objective = "binary:logistic", eval_metric = 'auc', nfold = 5)
-  conv_error[i,] = xgb_fit$evaluation_log$test_auc_mean
-  auc_out[i] = xgb_fit$evaluation_log$test_auc_mean[n_rounds]
+                   objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
+                   early_stopping_rounds = 10)
+  n_round_best[i] = xgb_fit$best_iteration
+  auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
 
-max_maxdepth = maxdepth[which.max(auc_out)]
-
-colnames(conv_error) = 1:n_rounds
-conv_error = cbind(conv_error, maxdepth) %>% as.data.frame()
-conv_error = conv_error %>% gather(round, error, -maxdepth)
-conv_error$maxdepth = as.character(conv_error$maxdepth)
-conv_error$round = as.numeric(conv_error$round)
-ggplot(conv_error) + geom_line(aes(x = round, y = error, color = maxdepth))
+best_n_rounds = n_round_best[which.max(auc_best)]
+max_maxdepth = maxdepth[which.max(auc_best)]
 
 params = list(eta = max_eta, colsample_bylevel = max_colsample,
               subsample = 0.5, max_depth = max_maxdepth,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
-# xgb_fit = xgboost(train_dummy, label = y_train, nrounds = 200, params = params, 
-#                   objective = "binary:logistic", eval_metric = 'auc')
+xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
+                   objective = "binary:logistic", eval_metric = 'auc')
 
 # tune subsample
 subsample = c(0.25, 0.5, 0.75, 1)
 n_settings = length(subsample)
 n_rounds = 200
-auc_out = rep(NA, n_settings)
+n_round_best = rep(NA, n_settings)
+auc_best = rep(NA, n_settings)
 conv_error = matrix(nrow = n_settings, ncol = n_rounds)
 for (i in 1:n_settings){
   params = list(eta = max_eta, colsample_bylevel= max_colsample,
                 subsample = subsample[i], max_depth = max_maxdepth,
                 min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
-                   objective = "binary:logistic", eval_metric = 'auc', nfold = 5)
-  conv_error[i,] = xgb_fit$evaluation_log$test_auc_mean
-  auc_out[i] = xgb_fit$evaluation_log$test_auc_mean[n_rounds]
+                   objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
+                   early_stopping_rounds = 10)
+  n_round_best[i] = xgb_fit$best_iteration
+  auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
 
-max_subsample = subsample[which.max(auc_out)]
-
-colnames(conv_error) = 1:n_rounds
-conv_error = cbind(conv_error, subsample) %>% as.data.frame()
-conv_error = conv_error %>% gather(round, error, -subsample)
-conv_error$subsample = as.character(conv_error$subsample)
-conv_error$round = as.numeric(conv_error$round)
-ggplot(conv_error) + geom_line(aes(x = round, y = error, color = subsample))
+best_n_rounds = n_round_best[which.max(auc_best)]
+max_subsample = subsample[which.max(auc_best)]
 
 params = list(eta = max_eta, colsample_bylevel = max_colsample,
               subsample = max_subsample, max_depth = max_maxdepth,
-              min_child_weigth = 1)
+              min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
-xgb_fit = xgboost(train_dummy, label = y_train, nrounds = 200, params = params, 
-                  objective = "binary:logistic", eval_metric = 'auc', scale_pos_weight = scale_pos_weight)
+xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
+                  objective = "binary:logistic", eval_metric = 'auc')
+
+# min_child_weight
+childweight = c(1, 10, 100, 400)
+n_settings = length(childweight)
+n_rounds = 200
+n_round_best = rep(NA, n_settings)
+auc_best = rep(NA, n_settings)
+conv_error = matrix(nrow = n_settings, ncol = n_rounds)
+for (i in 1:n_settings){
+  params = list(eta = max_eta, colsample_bylevel= max_colsample,
+                subsample = subsample[i], max_depth = max_maxdepth,
+                min_child_weigth = childweight, scale_pos_weight = scale_pos_weight)
+  xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
+                   objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
+                   early_stopping_rounds = 10)
+  n_round_best[i] = xgb_fit$best_iteration
+  auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
+}
+
+best_n_rounds = n_round_best[which.max(auc_best)]
+max_childweight = childweight[which.max(auc_best)]
+
+params = list(eta = max_eta, colsample_bylevel = max_colsample,
+              subsample = max_subsample, max_depth = max_maxdepth,
+              min_child_weigth = max_childweight, scale_pos_weight = scale_pos_weight)
+
+xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
+                  objective = "binary:logistic", eval_metric = 'auc')
 
 ### Validate performance
 pred_out <- predict(xgb_fit, train_dummy)
