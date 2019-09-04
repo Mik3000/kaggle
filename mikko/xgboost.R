@@ -33,11 +33,11 @@ x_train = train %>% select(-isFraud)
 y_train = train %>% select(isFraud) %>% unlist %>% as.factor()
 
 # upsample
-# p_upsample = 0.3
-# n_resample = ((length(y_train[y_train == 0])/ (1 - p_upsample)) * p_upsample) %>% round()
-# resampled = sample_n(x_train[y_train  == 1,], n_resample, replace = TRUE)
-# resampled$isFraud = 1
-# train = data.frame(x_train, isFraud = y_train) %>% rbind(resampled)
+p_upsample = 0.5
+n_resample = ((length(y_train[y_train == 0])/ (1 - p_upsample)) * p_upsample) %>% round()
+resampled = sample_n(x_train[y_train  == 1,], n_resample, replace = TRUE)
+resampled$isFraud = 1
+train = data.frame(x_train, isFraud = y_train) %>% rbind(resampled)
 
 options(na.action = 'na.pass')
 train_dummy = sparse.model.matrix(isFraud ~ . -1, train)
@@ -47,8 +47,11 @@ test_dummy = sparse.model.matrix(isFraud ~ . -1, test)
 
 train %>% group_by(isFraud) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
 
-y_train = train %>% select(isFraud) %>% unlist %>% as.numeric()#-1
+y_train = train %>% select(isFraud) %>% unlist %>% as.numeric()-1
 y_test = test %>% select(isFraud) %>% unlist %>% as.factor()
+
+early_stopping = 10
+gamma = 2
 
 ### TUNE ETA ###
 eta = c(0.05, 0.1, 0.2, 0.4, 0.5, 0.7, 1)
@@ -64,7 +67,7 @@ for (i in 1:n_settings){
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
                     objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
-                   early_stopping_rounds = 10)
+                   early_stopping_rounds = early_stopping, gamma = gamma)
   n_round_best[i] = xgb_fit$best_iteration
   auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
@@ -72,12 +75,12 @@ for (i in 1:n_settings){
 best_n_rounds = n_round_best[which.max(auc_best)]
 max_eta = eta[which.max(auc_best)]
 
-params = list(eta = 0.1, colsample_bylevel = 2/3,
+params = list(eta = max_eta, colsample_bylevel = 2/3,
               subsample = 0.5, max_depth = 2,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
 xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
-                   objective = "binary:logistic", eval_metric = 'auc')
+                   objective = "binary:logistic", eval_metric = 'auc', gamma = gamma)
 
 ### colsample ###
 colsample = c(1/3, 2/3, 1)
@@ -92,7 +95,7 @@ for (i in 1:n_settings){
                 min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
                    objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
-                   early_stopping_rounds = 10)
+                   early_stopping_rounds = early_stopping, gamma = gamma)
   n_round_best[i] = xgb_fit$best_iteration
   auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
@@ -105,7 +108,7 @@ params = list(eta = max_eta, colsample_bylevel = max_colsample,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
 xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
-                  objective = "binary:logistic", eval_metric = 'auc')
+                  objective = "binary:logistic", eval_metric = 'auc', gamma = gamma)
 
 ### Max depth
 maxdepth = c(1, 2,4,6,10)
@@ -120,7 +123,7 @@ for (i in 1:n_settings){
                 min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
                    objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
-                   early_stopping_rounds = 10)
+                   early_stopping_rounds = early_stopping, gamma = gamma)
   n_round_best[i] = xgb_fit$best_iteration
   auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
@@ -133,7 +136,7 @@ params = list(eta = max_eta, colsample_bylevel = max_colsample,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
 xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
-                   objective = "binary:logistic", eval_metric = 'auc')
+                   objective = "binary:logistic", eval_metric = 'auc', gamma = gamma)
 
 # tune subsample
 subsample = c(0.25, 0.5, 0.75, 1)
@@ -148,7 +151,7 @@ for (i in 1:n_settings){
                 min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
                    objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
-                   early_stopping_rounds = 10)
+                   early_stopping_rounds = early_stopping, gamma = gamma)
   n_round_best[i] = xgb_fit$best_iteration
   auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
@@ -161,7 +164,7 @@ params = list(eta = max_eta, colsample_bylevel = max_colsample,
               min_child_weigth = 1, scale_pos_weight = scale_pos_weight)
 
 xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
-                  objective = "binary:logistic", eval_metric = 'auc')
+                  objective = "binary:logistic", eval_metric = 'auc', gamma = gamma)
 
 # min_child_weight
 childweight = c(1, 10, 100, 400)
@@ -176,7 +179,7 @@ for (i in 1:n_settings){
                 min_child_weigth = childweight, scale_pos_weight = scale_pos_weight)
   xgb_fit = xgb.cv(train_dummy, label = y_train, nrounds = n_rounds, params = params, 
                    objective = "binary:logistic", eval_metric = 'auc', nfold = 5,
-                   early_stopping_rounds = 10)
+                   early_stopping_rounds = early_stopping, gamma = gamma)
   n_round_best[i] = xgb_fit$best_iteration
   auc_best[i] = xgb_fit$evaluation_log$test_auc_mean[xgb_fit$best_iteration]
 }
@@ -189,7 +192,7 @@ params = list(eta = max_eta, colsample_bylevel = max_colsample,
               min_child_weigth = max_childweight, scale_pos_weight = scale_pos_weight)
 
 xgb_fit = xgboost(train_dummy, label = y_train, nrounds = best_n_rounds, params = params, 
-                  objective = "binary:logistic", eval_metric = 'auc')
+                  objective = "binary:logistic", eval_metric = 'auc', gamma = gamma)
 
 ### Validate performance
 pred_out <- predict(xgb_fit, train_dummy)
